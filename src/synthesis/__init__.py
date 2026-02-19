@@ -1,0 +1,1 @@
+"""Multi-paper synthesis module."""

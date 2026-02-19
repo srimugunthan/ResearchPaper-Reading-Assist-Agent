@@ -1,31 +1,35 @@
 # ResearchPaper-reading-Assist Agent
 
-An intelligent LangChain-based system that helps researchers and students manage, understand, and extract insights from academic papers. Ingest PDFs, ask natural language questions with citations, synthesize across papers, and run autonomous research tasks.
+An intelligent LangChain-based system that helps researchers and students manage, understand, and extract insights from academic papers. Ingest PDFs, ask natural language questions with citations, and manage research ideas and notes.
 
 ## Features
 
-- **PDF Ingestion** — Scan folders, extract text/metadata, chunk and embed into a vector store
-- **Q&A with Citations** — Ask questions about your papers and get answers with source citations
+- **PDF Ingestion** — Scan folders, extract text/metadata, chunk and embed into a Chroma vector store with deduplication
+- **Q&A with Citations** — Ask questions about your papers and get answers with source citations (title, authors, page)
+- **Idea Log** — Save, search, edit, and delete research ideas via chat or REST API
+- **Notes & Insights** — Maintain a separate log of personal observations and learnings
 - **Persistent Memory** — Conversation history preserved across sessions
-- **Multi-Paper Synthesis** — Comparative analysis across papers with metadata filtering
-- **Research Agent** — Autonomous ReAct agent with arXiv search, web search, and Python REPL tools
+- **Chat Commands** — Natural language commands to add ideas/notes, search, and display logs
+- **REST APIs** — FastAPI endpoints for memory, ideas, and notes
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | LLM | Gemini (cloud, default), Ollama (local/offline) |
-| Embeddings | Gemini embeddings / sentence-transformers |
+| Embeddings | sentence-transformers (all-MiniLM-L6-v2) |
 | Vector Store | Chroma (local persistence) |
-| Framework | LangChain 0.1+ |
+| Framework | LangChain |
 | Frontend | Streamlit |
 | API | FastAPI + Uvicorn |
+| Package Manager | uv |
 | Language | Python 3.10+ |
 
 ## Prerequisites
 
 - Python 3.10 or higher
-- **Gemini (cloud):** A Google Gemini API key (`GEMINI_API_KEY`)
+- [uv](https://docs.astral.sh/uv/) package manager
+- **Gemini (cloud):** A Google API key (`GOOGLE_API_KEY`) from [AI Studio](https://aistudio.google.com/apikey)
 - **Ollama (local):** [Ollama](https://ollama.com) installed with a model pulled (e.g., `ollama pull llama3`)
 
 ## Installation
@@ -37,83 +41,164 @@ An intelligent LangChain-based system that helps researchers and students manage
    cd PersonalResearchAssistant
    ```
 
-2. **Create a virtual environment**
+2. **Create a virtual environment with uv**
 
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # macOS/Linux
-   # or
-   venv\Scripts\activate     # Windows
+   uv venv .venv
+   source .venv/bin/activate  # macOS/Linux
    ```
 
-3. **Install dependencies**
+3. **Install the project in editable mode**
 
    ```bash
-   pip install -r requirements.txt
+   uv pip install -e .
    ```
 
-4. **Configure environment variables**
-
-   Copy the example env file and fill in your API keys:
+4. **Install dependencies**
 
    ```bash
-   cp .env.example .env
+   uv pip install --python .venv/bin/python langchain langchain-core langchain-community langchain-chroma langchain-google-genai langchain-ollama langchain-text-splitters
+   uv pip install --python .venv/bin/python chromadb sentence-transformers pypdf
+   uv pip install --python .venv/bin/python streamlit fastapi uvicorn httpx python-dotenv
+   uv pip install --python .venv/bin/python pytest pytest-mock
    ```
 
-   Edit `.env` with your values:
+5. **Configure environment variables**
 
+   Copy `.env` and fill in your API key:
+
+   ```bash
+   cp .env .env.local  # optional backup
    ```
-   GEMINI_API_KEY=...
-   ANTHROPIC_API_KEY=sk-ant-...
+
+   Edit `.env`:
+
+   ```env
+   GOOGLE_API_KEY=your-api-key-here
+   LLM_PROVIDER=gemini           # or "ollama" or "fake"
+   LLM_MODEL=gemini-2.0-flash    # or "llama3" for Ollama
+   EMBEDDING_PROVIDER=sentence-transformers
+   DISPLAY_CAP=10
    ```
 
 ## Running the App
 
-### Ingest Papers (CLI)
+### 1. Ingest Papers (CLI)
 
 Scan a folder of PDFs to build the vector index:
 
 ```bash
-python cli.py --folder /path/to/papers/
+python cli.py --folder ./examples/sample_papers/
 ```
 
-### Q&A Chat Interface (Streamlit)
+Running again on the same folder skips already-ingested papers (deduplication by file hash).
 
-Launch the interactive Q&A UI:
+### 2. Q&A Chat Interface (Streamlit)
+
+Launch the interactive chat UI:
 
 ```bash
 streamlit run src/ui/streamlit_app.py
 ```
 
-### Multi-Paper Synthesis View
+**Sidebar controls:**
+- Set the PDF folder path and click "Ingest Papers" to index PDFs
+- Choose LLM provider (Gemini / Ollama / Fake), model name, Top-K, and temperature
+- View/clear conversation memory
+- Browse and delete ideas and notes
+
+**Chat commands:**
+| Command | Example |
+|---------|---------|
+| Ask a question | `What are the key findings of the Attention paper?` |
+| Add to idea log | `Add to idea log: use LQ loss for image segmentation` |
+| Add to notes | `Add this to notes: 'Only for symmetric loss, MAE is useful'` |
+| Show idea log | `Show my idea log` |
+| Show notes | `Show my notes` |
+| Search ideas | `Search my ideas for contrastive learning` |
+| Search notes | `Search my notes for MAE` |
+
+### 3. REST APIs (FastAPI)
+
+Start any of the API servers:
 
 ```bash
-streamlit run src/ui/synthesis_view.py
+# Memory API
+uvicorn src.api.memory_api:app --port 8001 --reload
+
+# Idea Log API
+uvicorn src.api.idea_log_api:app --port 8002 --reload
+
+# Notes API
+uvicorn src.api.notes_api:app --port 8003 --reload
 ```
 
-### Research Agent Dashboard
+**Memory API** (`http://localhost:8001`):
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/memory` | View conversation history |
+| DELETE | `/memory` | Clear conversation history |
+
+**Idea Log API** (`http://localhost:8002`):
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/ideas` | Add a new idea (`{"text": "...", "tags": [...]}`) |
+| GET | `/ideas` | List all ideas (optional: `?q=`, `?tag=`, `?limit=`) |
+| PUT | `/ideas/{id}` | Edit an idea (`{"text": "..."}`) |
+| DELETE | `/ideas/{id}` | Delete an idea |
+
+**Notes API** (`http://localhost:8003`):
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/notes` | Add a new note (`{"text": "..."}`) |
+| GET | `/notes` | List all notes (optional: `?q=`, `?limit=`) |
+| PUT | `/notes/{id}` | Edit a note (`{"text": "..."}`) |
+| DELETE | `/notes/{id}` | Delete a note |
+
+**Example API calls:**
 
 ```bash
-streamlit run src/ui/agent_dashboard.py
+# Add an idea
+curl -X POST http://localhost:8002/ideas \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Use contrastive loss for audio tasks", "tags": ["audio", "contrastive"]}'
+
+# List ideas
+curl http://localhost:8002/ideas
+
+# Search ideas
+curl "http://localhost:8002/ideas?q=contrastive"
+
+# Add a note
+curl -X POST http://localhost:8003/notes \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Only for symmetric loss, MAE is useful"}'
+
+# View conversation memory
+curl http://localhost:8001/memory
 ```
-
-### Memory API (FastAPI)
-
-```bash
-uvicorn src.api.memory_api:app --reload
-```
-
-Endpoints:
-- `GET /memory` — View conversation memory
-- `DELETE /memory` — Clear conversation memory
 
 ## Running Tests
 
+All tests use mocked LLM and vector DB calls — no API keys required.
+
 ```bash
+# Run all tests
 pytest tests/ -v
+
+# Run tests for a specific phase
+pytest tests/test_scanner.py tests/test_ingestion_loader.py tests/test_splitter.py tests/test_vectorstore_integration.py tests/test_pipeline.py -v  # Phase 1
+pytest tests/test_llm_factory.py tests/test_retriever.py tests/test_retrievalqa_citations.py tests/test_streaming_callback.py -v  # Phase 2
+pytest tests/test_intent_detector.py tests/test_notes_log.py tests/test_idea_log.py tests/test_memory_persistence.py tests/test_memory_clear.py tests/test_notes_api.py tests/test_idea_log_api.py tests/test_memory_api.py -v  # Phase 3
+
+# Run a single test file
+pytest tests/test_intent_detector.py -v
+
+# Run with short summary
+pytest tests/ -q
 ```
 
-All tests use mocked LLM and vector DB calls — no API keys required for testing.
+**Current test count:** 135 tests across 17 test files (Phases 1-3).
 
 ## Configuration
 
@@ -121,35 +206,70 @@ Key settings in `.env`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GEMINI_API_KEY` | — | Google Gemini API key |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key |
-| `CHROMA_PERSIST_PATH` | `./chroma_db` | Path for Chroma vector store persistence |
-| `LLM_MODEL` | `gemini-2.0-flash` | Primary LLM model |
-| `EMBEDDING_MODEL` | `models/embedding-001` | Embedding model |
+| `GOOGLE_API_KEY` | — | Google API key for Gemini |
+| `LLM_PROVIDER` | `gemini` | LLM provider: `gemini`, `ollama`, or `fake` |
+| `LLM_MODEL` | `gemini-2.0-flash` | Model name |
+| `LLM_TEMPERATURE` | `0.1` | LLM temperature |
+| `EMBEDDING_PROVIDER` | `sentence-transformers` | Embedding provider: `sentence-transformers` or `fake` |
+| `CHROMA_PERSIST_DIR` | `./chroma_db` | Chroma vector store path |
+| `TOP_K` | `5` | Number of retrieved chunks per query |
 | `CHUNK_SIZE` | `1000` | Text chunk size for splitting |
 | `CHUNK_OVERLAP` | `200` | Overlap between chunks |
-| `TOP_K_RETRIEVAL` | `5` | Number of retrieved chunks per query |
-| `DEV_MODE` | `false` | Enable mocked LLM/vector DB for local dev |
+| `DISPLAY_CAP` | `10` | Max entries shown for "show my notes/ideas" commands |
 
 ## Project Structure
 
 ```
 PersonalResearchAssistant/
-├── cli.py                    # CLI entry point for PDF ingestion
-├── requirements.txt          # Python dependencies
-├── .env.example              # Environment variable template
+├── cli.py                        # CLI entry point for PDF ingestion
+├── pyproject.toml                # Project config (editable install)
+├── .env                          # Environment variables
 ├── src/
-│   ├── core/                 # Embeddings, vector store, retriever utils
-│   ├── ingestion/            # PDF scanning, loading, splitting, pipeline
-│   ├── qna/                  # RetrievalQA chain and citation prompts
-│   ├── memory/               # Conversation memory and persistence
-│   ├── synthesis/            # Multi-paper synthesis chains and filters
-│   ├── agent/                # ReAct agent and tool adapters
-│   ├── ui/                   # Streamlit pages
-│   └── api/                  # FastAPI endpoints
-├── tests/                    # Unit and integration tests
-├── docs/                     # Phase-specific documentation
-└── examples/                 # Quickstart guide and sample papers
+│   ├── core/
+│   │   ├── embeddings.py         # Embedding factory (sentence-transformers, fake)
+│   │   ├── llm.py                # LLM factory (Gemini, Ollama, fake)
+│   │   ├── vectorstore.py        # Chroma vector store helpers
+│   │   └── retriever.py          # Retriever with similarity search
+│   ├── ingestion/
+│   │   ├── scanner.py            # Recursive PDF file discovery
+│   │   ├── loader.py             # PDF text & metadata extraction
+│   │   ├── splitter.py           # Text chunking with overlap
+│   │   └── pipeline.py           # End-to-end ingestion orchestrator
+│   ├── qna/
+│   │   ├── qa.py                 # Q&A chain with citation extraction
+│   │   ├── prompts.py            # Citation-aware prompt templates
+│   │   └── streaming.py          # Streaming callback handler
+│   ├── memory/
+│   │   ├── memory.py             # Conversation memory (JSON-backed)
+│   │   ├── idea_log.py           # Idea log CRUD (JSON-backed)
+│   │   ├── notes_log.py          # Notes & insights CRUD (JSON-backed)
+│   │   └── intent_detector.py    # Regex-based chat command routing
+│   ├── ui/
+│   │   └── streamlit_app.py      # Streamlit chat interface
+│   └── api/
+│       ├── memory_api.py         # FastAPI: conversation memory endpoints
+│       ├── idea_log_api.py       # FastAPI: idea log CRUD endpoints
+│       └── notes_api.py          # FastAPI: notes CRUD endpoints
+├── tests/                        # 135 tests (all mocked, no API keys needed)
+│   ├── test_scanner.py
+│   ├── test_ingestion_loader.py
+│   ├── test_splitter.py
+│   ├── test_vectorstore_integration.py
+│   ├── test_pipeline.py
+│   ├── test_llm_factory.py
+│   ├── test_retriever.py
+│   ├── test_retrievalqa_citations.py
+│   ├── test_streaming_callback.py
+│   ├── test_intent_detector.py
+│   ├── test_notes_log.py
+│   ├── test_idea_log.py
+│   ├── test_memory_persistence.py
+│   ├── test_memory_clear.py
+│   ├── test_notes_api.py
+│   ├── test_idea_log_api.py
+│   └── test_memory_api.py
+└── examples/
+    └── sample_papers/            # Place PDF papers here
 ```
 
 ## License
