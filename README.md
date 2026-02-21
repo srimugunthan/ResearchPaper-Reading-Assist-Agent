@@ -1,6 +1,11 @@
 # ResearchPaper-reading-Assist Agent
 
 An intelligent LangChain-based system that helps researchers and students manage, understand, and extract insights from academic papers. Ingest PDFs, ask natural language questions with citations, and manage research ideas and notes.
+## Demo
+
+
+https://github.com/user-attachments/assets/30f44261-7271-4f55-b6c6-73156c43055c
+
 
 ## Features
 
