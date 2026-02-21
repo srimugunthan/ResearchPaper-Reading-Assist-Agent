@@ -8,9 +8,9 @@ load_dotenv()
 from src.core.llm import get_llm
 from src.core.embeddings import get_embeddings
 from src.core.vectorstore import get_vectorstore
-from src.core.retriever import create_retriever
+from src.core.retriever import create_filtered_retriever
 from src.qna.qa import ask
-from src.ingestion.pipeline import ingest_folder
+from src.synthesis.filters import get_unique_titles
 from src.memory.memory import ConversationMemory
 from src.memory.idea_log import IdeaLog
 from src.memory.notes_log import NotesLog
@@ -35,35 +35,14 @@ notes_log = st.session_state.notes_log
 
 # --- Sidebar ---
 with st.sidebar:
-    st.header("Ingestion")
-    folder_path = st.text_input("PDF Folder Path", value="./examples/sample_papers")
-    persist_dir = st.text_input("Chroma Persist Dir", value="./chroma_db")
-
-    embedding_provider = st.selectbox(
-        "Embedding Provider",
-        ["sentence-transformers", "fake"],
-        index=0,
-    )
-
-    if st.button("Ingest Papers"):
-        with st.spinner("Ingesting papers..."):
-            try:
-                emb = get_embeddings(provider=embedding_provider)
-                result = ingest_folder(
-                    folder_path=folder_path,
-                    persist_directory=persist_dir,
-                    embedding_function=emb,
-                )
-                st.success(
-                    f"Done! Processed: {result['files_processed']}, "
-                    f"Skipped: {result['files_skipped']}, "
-                    f"Failed: {result['files_failed']}"
-                )
-                if result["errors"]:
-                    for err in result["errors"]:
-                        st.warning(f"{err['file']}: {err['error']}")
-            except FileNotFoundError as e:
-                st.error(str(e))
+    # --- Idea Log & Notes buttons ---
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        if st.button("Idea Log", use_container_width=True):
+            st.session_state.pending_sidebar_query = "Show my ideas"
+    with btn_col2:
+        if st.button("Notes & Insights", use_container_width=True):
+            st.session_state.pending_sidebar_query = "Show my notes"
 
     st.divider()
 
@@ -96,47 +75,6 @@ with st.sidebar:
         conv_memory.clear()
         st.success("Conversation memory cleared.")
 
-    st.divider()
-
-    # --- Idea Log section ---
-    st.header("Idea Log")
-    idea_result = idea_log.get_ideas(limit=DISPLAY_CAP)
-    if idea_result["ideas"]:
-        for idea in idea_result["ideas"]:
-            cols = st.columns([4, 1])
-            with cols[0]:
-                st.text(idea["text"][:80])
-                if idea["tags"]:
-                    st.caption(", ".join(idea["tags"][:3]))
-            with cols[1]:
-                if st.button("x", key=f"del_idea_{idea['id']}"):
-                    idea_log.delete_idea(idea["id"])
-                    st.rerun()
-        if idea_result["total_count"] > DISPLAY_CAP:
-            st.caption(f"Showing {DISPLAY_CAP} of {idea_result['total_count']} ideas.")
-    else:
-        st.info("No ideas yet. Add via chat: 'Add to idea log: ...'")
-
-    st.divider()
-
-    # --- Notes & Insights section ---
-    st.header("Notes & Insights")
-    notes_result = notes_log.get_notes(limit=DISPLAY_CAP)
-    if notes_result["notes"]:
-        for note in notes_result["notes"]:
-            cols = st.columns([4, 1])
-            with cols[0]:
-                st.text(note["text"][:80])
-            with cols[1]:
-                if st.button("x", key=f"del_note_{note['id']}"):
-                    notes_log.delete_note(note["id"])
-                    st.rerun()
-        if notes_result["total_count"] > DISPLAY_CAP:
-            st.caption(f"Showing {DISPLAY_CAP} of {notes_result['total_count']} notes.")
-    else:
-        st.info("No notes yet. Add via chat: 'Add this to notes: ...'")
-
-
 # --- Session State ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -147,7 +85,12 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # --- Chat input ---
-if prompt := st.chat_input("Ask a question about your research papers..."):
+# Check for pending sidebar button query
+prompt = st.chat_input("Ask a question about your research papers...")
+if not prompt and st.session_state.get("pending_sidebar_query"):
+    prompt = st.session_state.pop("pending_sidebar_query")
+
+if prompt:
     # Display user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -241,15 +184,33 @@ if prompt := st.chat_input("Ask a question about your research papers..."):
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
 
+            # --- Handle: List papers ---
+            elif intent == "list_papers":
+                emb = get_embeddings(provider="sentence-transformers", model_name="nomic-ai/nomic-embed-text-v1.5")
+                store = get_vectorstore(
+                    persist_directory="./chroma_db",
+                    embedding_function=emb,
+                )
+                titles = get_unique_titles(store)
+                if titles:
+                    lines = [f"**Papers in the collection** ({len(titles)} total):\n"]
+                    for i, t in enumerate(titles, 1):
+                        lines.append(f"{i}. {t}")
+                    answer = "\n".join(lines)
+                else:
+                    answer = "No papers found. Please ingest papers first."
+                st.markdown(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+
             # --- Handle: Regular question ---
             else:
                 with st.spinner("Thinking..."):
-                    emb = get_embeddings(provider=embedding_provider)
+                    emb = get_embeddings(provider="sentence-transformers", model_name="nomic-ai/nomic-embed-text-v1.5")
                     store = get_vectorstore(
-                        persist_directory=persist_dir,
+                        persist_directory="./chroma_db",
                         embedding_function=emb,
                     )
-                    retriever = create_retriever(store, k=top_k)
+                    retriever = create_filtered_retriever(store, query=prompt, k=top_k)
                     llm = get_llm(
                         provider=llm_provider,
                         model_name=llm_model,
@@ -264,11 +225,12 @@ if prompt := st.chat_input("Ask a question about your research papers..."):
 
                     answer = result["answer"]
 
-                    # Append sources
+                    # Append sources with section info
                     if result["sources"]:
                         answer += "\n\n**Sources:**\n"
                         for src in result["sources"]:
-                            answer += f"- [{src['title']}, {src['authors']}, p.{src['page']}]\n"
+                            section_str = f", {src.get('section', '')}" if src.get("section") else ""
+                            answer += f"- [{src['title']}, {src['authors']}, p.{src['page']}{section_str}]\n"
 
                     st.markdown(answer)
                     st.session_state.messages.append({"role": "assistant", "content": answer})

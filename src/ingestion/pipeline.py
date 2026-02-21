@@ -11,7 +11,7 @@ from langchain_core.embeddings import Embeddings
 
 from src.ingestion.scanner import scan_folder
 from src.ingestion.loader import load_pdf
-from src.ingestion.splitter import split_text
+from src.ingestion.splitter import split_text_with_sections
 from src.core.vectorstore import get_vectorstore, store_documents
 
 logger = logging.getLogger(__name__)
@@ -46,8 +46,33 @@ def _save_registry(persist_directory: str, registry: Dict[str, str]):
         json.dump(registry, f, indent=2)
 
 
+def _build_page_offsets(docs: List[Document]) -> List[tuple]:
+    """Build a list of (start_offset, end_offset, page_number) from loaded pages.
+
+    Used to attribute approximate page numbers to chunks after full-text concatenation.
+    """
+    offsets = []
+    pos = 0
+    for doc in docs:
+        length = len(doc.page_content)
+        page_num = doc.metadata.get("page", 0)
+        offsets.append((pos, pos + length, page_num))
+        pos += length + 1  # +1 for the \n used in join
+    return offsets
+
+
+def _find_page_for_chunk(chunk_text: str, full_text: str, page_offsets: List[tuple]) -> int:
+    """Find the approximate page number for a chunk by locating it in the full text."""
+    chunk_start = full_text.find(chunk_text[:100])
+    if chunk_start >= 0:
+        for start, end, page_num in page_offsets:
+            if start <= chunk_start < end:
+                return page_num
+    return 0
+
+
 def ingest_pdf(pdf_path: str, store, chunk_size: int = 1000, chunk_overlap: int = 200) -> int:
-    """Ingest a single PDF: load -> split -> store.
+    """Ingest a single PDF: load -> split (section-aware) -> store.
 
     Args:
         pdf_path: Path to the PDF file.
@@ -62,17 +87,35 @@ def ingest_pdf(pdf_path: str, store, chunk_size: int = 1000, chunk_overlap: int 
     if not docs:
         return 0
 
-    all_chunks = []
-    for doc in docs:
-        chunks = split_text(doc.page_content, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-        for chunk_text in chunks:
-            chunk_doc = Document(
-                page_content=chunk_text,
-                metadata={**doc.metadata},
-            )
-            all_chunks.append(chunk_doc)
+    # Concatenate all pages for cross-page section detection
+    full_text = "\n".join(doc.page_content for doc in docs)
 
-    count = store_documents(store, all_chunks)
+    # Base metadata from the first page (source, title, total_pages)
+    base_metadata = {
+        "source": docs[0].metadata.get("source", pdf_path),
+        "title": docs[0].metadata.get("title", ""),
+        "total_pages": docs[0].metadata.get("total_pages", len(docs)),
+        "authors": docs[0].metadata.get("authors", "Unknown"),
+        "page": 0,
+    }
+
+    # Section-aware splitting with graceful fallback
+    chunk_docs = split_text_with_sections(
+        text=full_text,
+        metadata=base_metadata,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+
+    # Attribute approximate page numbers
+    if chunk_docs:
+        page_offsets = _build_page_offsets(docs)
+        for chunk_doc in chunk_docs:
+            chunk_doc.metadata["page"] = _find_page_for_chunk(
+                chunk_doc.page_content, full_text, page_offsets
+            )
+
+    count = store_documents(store, chunk_docs)
     return count
 
 

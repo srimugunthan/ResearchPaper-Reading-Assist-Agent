@@ -75,5 +75,11 @@ def detect_intent(user_input: str) -> Dict[str, Any]:
     if re.match(r"(show|display|list)\s+(my\s+)?(idea\s*log|ideas)", lower):
         return {"intent": "show_ideas", "extracted_text": "", "params": {}}
 
+    # --- List papers ---
+    if re.match(r"(list|show|display|what)\s+(all\s+)?(the\s+)?(papers?|documents?)", lower):
+        return {"intent": "list_papers", "extracted_text": "", "params": {}}
+    if re.search(r"papers?\s+(ingested|indexed|in\s+the\s+collection|in\s+the\s+database|stored)", lower):
+        return {"intent": "list_papers", "extracted_text": "", "params": {}}
+
     # --- Default: regular question ---
     return {"intent": "question", "extracted_text": text, "params": {}}

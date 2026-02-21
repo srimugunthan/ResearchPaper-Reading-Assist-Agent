@@ -1,5 +1,6 @@
 """Chroma vector store integration and helper functions."""
 import hashlib
+from difflib import SequenceMatcher
 from typing import List, Optional
 
 from langchain_core.documents import Document
@@ -85,3 +86,34 @@ def query_store(
         List of matching Document objects.
     """
     return store.similarity_search(query, k=k)
+
+
+def deduplicate_results(
+    documents: List[Document], similarity_threshold: float = 0.9
+) -> List[Document]:
+    """Remove near-duplicate documents from retrieval results.
+
+    Uses SequenceMatcher ratio for content similarity comparison.
+    Keeps the first occurrence (highest-ranked) of each near-duplicate group.
+
+    Args:
+        documents: List of retrieved Document objects (assumed ordered by relevance).
+        similarity_threshold: Minimum similarity ratio (0.0-1.0) to consider as duplicate.
+
+    Returns:
+        Filtered list of Document objects with near-duplicates removed.
+    """
+    if not documents:
+        return []
+
+    unique = [documents[0]]
+    for doc in documents[1:]:
+        is_dup = False
+        for kept in unique:
+            ratio = SequenceMatcher(None, doc.page_content, kept.page_content).ratio()
+            if ratio >= similarity_threshold:
+                is_dup = True
+                break
+        if not is_dup:
+            unique.append(doc)
+    return unique

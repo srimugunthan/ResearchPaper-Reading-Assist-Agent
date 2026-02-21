@@ -27,18 +27,10 @@ with st.sidebar:
 
     st.divider()
 
-    st.header("Vector Store")
-    persist_dir = st.text_input("Chroma Persist Dir", value="./chroma_db", key="synth_persist")
-    embedding_provider = st.selectbox(
-        "Embedding Provider", ["sentence-transformers", "fake"], index=0, key="synth_emb"
-    )
-
-    st.divider()
-
     st.header("Paper Filters")
     try:
-        emb = get_embeddings(provider=embedding_provider)
-        store = get_vectorstore(persist_directory=persist_dir, embedding_function=emb)
+        emb = get_embeddings(provider="sentence-transformers")
+        store = get_vectorstore(persist_directory="./chroma_db", embedding_function=emb)
         available_titles = get_unique_titles(store)
     except Exception:
         available_titles = []

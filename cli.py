@@ -1,6 +1,8 @@
 """CLI entry point for the ResearchPaper-reading-Assist Agent ingestion pipeline."""
 import argparse
 import logging
+import os
+import shutil
 import sys
 
 from dotenv import load_dotenv
@@ -11,6 +13,7 @@ from src.ingestion.pipeline import ingest_folder
 
 DEFAULT_PERSIST_DIR = "./chroma_db"
 DEFAULT_EMBEDDING_PROVIDER = "sentence-transformers"
+DEFAULT_EMBEDDING_MODEL = "nomic-ai/nomic-embed-text-v1.5"
 
 
 def main():
@@ -34,6 +37,11 @@ def main():
         help=f"Embedding provider (default: {DEFAULT_EMBEDDING_PROVIDER}).",
     )
     parser.add_argument(
+        "--embedding-model",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help=f"Embedding model name (default: {DEFAULT_EMBEDDING_MODEL}).",
+    )
+    parser.add_argument(
         "--chunk-size",
         type=int,
         default=1000,
@@ -44,6 +52,11 @@ def main():
         type=int,
         default=200,
         help="Chunk overlap for text splitting (default: 200).",
+    )
+    parser.add_argument(
+        "--re-embed",
+        action="store_true",
+        help="Clear existing Chroma DB and re-ingest all files with current embedding model.",
     )
     parser.add_argument(
         "--verbose",
@@ -61,9 +74,22 @@ def main():
     logging.info(f"Starting ingestion from: {args.folder}")
     logging.info(f"Persist directory: {args.persist_dir}")
     logging.info(f"Embedding provider: {args.embedding_provider}")
+    logging.info(f"Embedding model: {args.embedding_model}")
+
+    # Handle --re-embed: clear existing data to force full re-ingestion
+    if args.re_embed:
+        if os.path.exists(args.persist_dir):
+            logging.warning(f"--re-embed: Clearing existing Chroma DB at {args.persist_dir}")
+            shutil.rmtree(args.persist_dir)
+            logging.info("Chroma DB cleared. All files will be re-ingested.")
+        else:
+            logging.info("--re-embed: No existing Chroma DB found. Proceeding with fresh ingestion.")
 
     try:
-        embedding_function = get_embeddings(provider=args.embedding_provider)
+        embedding_function = get_embeddings(
+            provider=args.embedding_provider,
+            model_name=args.embedding_model,
+        )
     except Exception as e:
         logging.error(f"Failed to initialize embeddings: {e}")
         sys.exit(1)

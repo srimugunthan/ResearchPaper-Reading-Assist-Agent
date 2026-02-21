@@ -217,61 +217,6 @@ Key settings in `.env`:
 | `CHUNK_OVERLAP` | `200` | Overlap between chunks |
 | `DISPLAY_CAP` | `10` | Max entries shown for "show my notes/ideas" commands |
 
-## Project Structure
-
-```
-PersonalResearchAssistant/
-├── cli.py                        # CLI entry point for PDF ingestion
-├── pyproject.toml                # Project config (editable install)
-├── .env                          # Environment variables
-├── src/
-│   ├── core/
-│   │   ├── embeddings.py         # Embedding factory (sentence-transformers, fake)
-│   │   ├── llm.py                # LLM factory (Gemini, Ollama, fake)
-│   │   ├── vectorstore.py        # Chroma vector store helpers
-│   │   └── retriever.py          # Retriever with similarity search
-│   ├── ingestion/
-│   │   ├── scanner.py            # Recursive PDF file discovery
-│   │   ├── loader.py             # PDF text & metadata extraction
-│   │   ├── splitter.py           # Text chunking with overlap
-│   │   └── pipeline.py           # End-to-end ingestion orchestrator
-│   ├── qna/
-│   │   ├── qa.py                 # Q&A chain with citation extraction
-│   │   ├── prompts.py            # Citation-aware prompt templates
-│   │   └── streaming.py          # Streaming callback handler
-│   ├── memory/
-│   │   ├── memory.py             # Conversation memory (JSON-backed)
-│   │   ├── idea_log.py           # Idea log CRUD (JSON-backed)
-│   │   ├── notes_log.py          # Notes & insights CRUD (JSON-backed)
-│   │   └── intent_detector.py    # Regex-based chat command routing
-│   ├── ui/
-│   │   └── streamlit_app.py      # Streamlit chat interface
-│   └── api/
-│       ├── memory_api.py         # FastAPI: conversation memory endpoints
-│       ├── idea_log_api.py       # FastAPI: idea log CRUD endpoints
-│       └── notes_api.py          # FastAPI: notes CRUD endpoints
-├── tests/                        # 135 tests (all mocked, no API keys needed)
-│   ├── test_scanner.py
-│   ├── test_ingestion_loader.py
-│   ├── test_splitter.py
-│   ├── test_vectorstore_integration.py
-│   ├── test_pipeline.py
-│   ├── test_llm_factory.py
-│   ├── test_retriever.py
-│   ├── test_retrievalqa_citations.py
-│   ├── test_streaming_callback.py
-│   ├── test_intent_detector.py
-│   ├── test_notes_log.py
-│   ├── test_idea_log.py
-│   ├── test_memory_persistence.py
-│   ├── test_memory_clear.py
-│   ├── test_notes_api.py
-│   ├── test_idea_log_api.py
-│   └── test_memory_api.py
-└── examples/
-    └── sample_papers/            # Place PDF papers here
-```
-
 ## License
 
 This project is for personal/research use.
