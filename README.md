@@ -202,20 +202,25 @@ pytest tests/ -q
 
 ## Configuration
 
-Key settings in `.env`:
+**Environment variables** (read from `.env`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GOOGLE_API_KEY` | — | Google API key for Gemini |
-| `LLM_PROVIDER` | `gemini` | LLM provider: `gemini`, `ollama`, or `fake` |
-| `LLM_MODEL` | `gemini-2.0-flash` | Model name |
-| `LLM_TEMPERATURE` | `0.1` | LLM temperature |
-| `EMBEDDING_PROVIDER` | `sentence-transformers` | Embedding provider: `sentence-transformers` or `fake` |
-| `CHROMA_PERSIST_DIR` | `./chroma_db` | Chroma vector store path |
-| `TOP_K` | `5` | Number of retrieved chunks per query |
-| `CHUNK_SIZE` | `1000` | Text chunk size for splitting |
-| `CHUNK_OVERLAP` | `200` | Overlap between chunks |
+| `GOOGLE_API_KEY` | — | Google API key for Gemini (read by LangChain) |
 | `DISPLAY_CAP` | `10` | Max entries shown for "show my notes/ideas" commands |
+
+**Hardcoded defaults** (configurable via UI sidebar or CLI args):
+
+| Setting | Default | Where to change |
+|---------|---------|-----------------|
+| LLM provider | `gemini` | Streamlit sidebar selectbox |
+| LLM model | `gemini-2.0-flash` | Streamlit sidebar text input |
+| LLM temperature | `0.1` | Streamlit sidebar slider |
+| Embedding provider | `sentence-transformers` | Streamlit sidebar / `cli.py --embedding-provider` |
+| Chroma persist dir | `./chroma_db` | Streamlit sidebar text input / `cli.py --persist-dir` |
+| Top-K results | `5` | Streamlit sidebar slider |
+| Chunk size | `1000` | `cli.py --chunk-size` |
+| Chunk overlap | `200` | `cli.py --chunk-overlap` |
 
 ## License
 

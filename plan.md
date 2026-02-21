@@ -172,6 +172,99 @@ Implement a LangChain-based ResearchPaper-reading-Assist Agent in five phases: i
 
 ---
 
+## RAG Performance Improvement Plan
+
+**Problem Statement:** Current RAG system (Phase 2) has poor retrieval accuracy. Example: querying "What is the main idea in the paper 'Gradient-based learning applied to document recognition'" returns irrelevant papers about noisy labels and cross-modal learning. Root causes: weak vector search, generic embedding model, suboptimal chunking, and weak LLM prompting.
+
+**Solution:** Three-phase improvement plan targeting retrieval quality, ranking, and embeddings.
+
+---
+
+### RAG Phase 1: Immediate — Hybrid Retrieval & Prompt Enforcement
+
+**Objective:** Quick wins to improve title matching and LLM citation awareness. Target time: 30 minutes.
+
+**Concrete Tasks:**
+- Add BM25 (sparse) retrieval to hybrid search with vector (dense) retrieval using EnsembleRetriever
+- Weight ensemble: 60% vector + 40% BM25 (tune empirically)
+- Create title-enforcing QA prompt that asks LLM to prioritize paper title/author matches
+- Increase retriever `k` parameter from 3 to 5 for first-pass candidate pool
+- Add fallback logic: if answer confidence is low, return "Paper found but insufficient excerpts" instead of hallucinating
+
+**Acceptance Criteria:**
+- BM25 retriever is integrated and weighted in ensemble retriever
+- Title-based queries (e.g., "main idea in X paper") retrieve the correct paper in top-3 results
+- QA prompt enforces: "If the question mentions a paper title, prioritize results matching that title"
+- No hallucinated answers for unknown papers; explicit fallback message is returned
+
+**Files to Create/Modify:**
+- `src/core/retriever.py` — add BM25Retriever and EnsembleRetriever with 60/40 weighting
+- `src/qna/prompts.py` — add `TITLE_ENFORCING_QA_PROMPT` that prioritizes title matches and enforces "paper found but insufficient" fallback
+- `src/qna/qa.py` — integrate new prompt and increase retriever `k=5`
+- `tests/test_retriever_hybrid.py` — assert BM25 + vector ensemble returns expected docs in correct order
+- `tests/test_qa_prompt_enforcement.py` — mock LLM and assert prompt causes title-prioritization behavior
+
+---
+
+### RAG Phase 2: Short-Term — Query Expansion & Reranking
+
+**Objective:** Improve retrieval recall and ranking. Target time: 1-2 hours.
+
+**Concrete Tasks:**
+- Add MultiQueryRetriever to reformulate user queries into 3-5 variations (e.g., "gradient-based learning" → "gradient descent methods", "learning by backpropagation", "automatic differentiation applied to", etc.)
+- Implement contextual compression with a CrossEncoderReranker to re-score and reorder retrieved documents by relevance
+- Use `cross-encoder/ms-marco-MiniLM-L-12-v2` model (lightweight, fast)
+- Increase retriever `k` from 5 to 10 in first-pass retrieval, then rerank to top 5
+- Add confidence scoring: if top reranked score is below threshold (e.g., 0.5), warn user that retrieval confidence is low
+
+**Acceptance Criteria:**
+- MultiQueryRetriever generates 3-5 query variations for diverse retrieval
+- Reranker re-scores and reorders retrieved docs, top-1 becomes more relevant than original top-1
+- For the original failing query about "Gradient-based learning", reranked results should include the correct paper or similar papers
+- Confidence scores are computed and displayed to user
+- Latency increase is <2 seconds for reranking (benchmark on 10-doc set)
+
+**Files to Create/Modify:**
+- `src/core/retriever.py` — add MultiQueryRetriever, ContextualCompressionRetriever with CrossEncoderReranker
+- `src/qna/qa.py` — wire multi-query + reranking retriever, add confidence scoring to QA chain output
+- `src/ui/streamlit_app.py` — display retrieval confidence score next to answer
+- `tests/test_multiquery_retriever.py` — assert MultiQueryRetriever generates varied queries
+- `tests/test_reranker.py` — assert CrossEncoderReranker reorders docs and improves top-1 relevance
+- `tests/test_qa_confidence_scoring.py` — assert confidence score is computed and returned
+
+---
+
+### RAG Phase 3: Medium-Term — Domain-Specific Embeddings & Structured Chunking
+
+**Objective:** Improve semantic understanding of academic papers. Target time: half day.
+
+**Concrete Tasks:**
+- Switch from generic sentence-transformers to domain-specific embedding model: `allenai/specter` (trained on 100k arXiv papers and citations) or `nomic-ai/nomic-embed-text-v1.5`
+- Refactor chunking strategy: detect paper structure (Abstract, Introduction, Methods, Results, Conclusion) and extract each section as a separate high-priority chunk with metadata tag `chunk_type=abstract|introduction|conclusion`
+- Add metadata filtering using SelfQueryRetriever to allow filtering by chunk type, so queries like "what is the main idea" prioritize abstract+introduction chunks
+- Implement deduplication: after reranking, filter out duplicate-content chunks to avoid repeating the same information
+- Add structured metadata to each chunk: `{paper_title, authors, year, section, chunk_type, page_range}`
+
+**Acceptance Criteria:**
+- Embeddings switched to specter/nomic, vector store re-embedded with new model
+- Papers are parsed to extract Abstract, Introduction, Methods, Results, Conclusion as separate indexed sections
+- SelfQueryRetriever can filter by `chunk_type` and `section` metadata
+- Queries about "main idea / contribution / hypothesis" prioritize abstract+introduction chunks (metadata filter: `chunk_type in [abstract, introduction]`)
+- For the original failing query, retrieval now returns abstract of the correct paper
+- Duplicate-detection filter removes redundant results
+
+**Files to Create/Modify:**
+- `src/core/embeddings.py` — switch to `allenai/specter` and re-embed all ingested papers (add migration script)
+- `src/ingestion/splitter.py` — add structural parsing to detect sections (Abstract, Intro, Methods, etc.) and create tagged chunks
+- `src/core/retriever.py` — add SelfQueryRetriever with metadata filters for chunk_type and section
+- `src/core/vectorstore.py` — add deduplication utility to filter redundant chunks post-retrieval
+- `cli.py` — add `--re-embed` flag to trigger re-embedding with new model for existing papers
+- `tests/test_paper_structure_extraction.py` — assert Abstract, Intro, Methods are correctly extracted
+- `tests/test_selfquery_metadata_filtering.py` — assert SelfQueryRetriever filters by chunk_type and section
+- `tests/test_deduplication.py` — assert duplicate chunks are filtered out
+
+---
+
 ## Test Plans
 
 ### Phase 1 Test Plan: Foundation — Local PDF Ingestion & Vector Index
@@ -818,7 +911,15 @@ tests/
 ├── test_mapreduce_chain.py
 ├── test_selfquery_filters.py
 ├── test_agent_tooling.py
-└── test_agent_trace_logging.py
+├── test_agent_trace_logging.py
+├── test_retriever_hybrid.py
+├── test_qa_prompt_enforcement.py
+├── test_multiquery_retriever.py
+├── test_reranker.py
+├── test_qa_confidence_scoring.py
+├── test_paper_structure_extraction.py
+├── test_selfquery_metadata_filtering.py
+└── test_deduplication.py
 
 docs/
 ├── ingestion.md
@@ -843,10 +944,13 @@ README.md
 langchain>=0.1.0
 langchain-google-genai>=1.0.0
 langchain-ollama>=0.1.0
+langchain-community>=0.1.0
 chromadb>=0.3.0
 google-generativeai>=0.3.0
 sentence-transformers>=2.2.0
 transformers>=4.30.0
+rank-bm25>=0.2.2
+cross-encoder>=2.0.0
 streamlit>=1.20.0
 pytest>=7.1.0
 pytest-mock>=3.10.0
