@@ -228,6 +228,6 @@ pytest tests/ -q
 | Chunk overlap | `200` | `cli.py --chunk-overlap` |
 
 ## TODO
-- optimize RAG retrieval
+- optimize RAG retrieval (chunking strategy, embeddings etc)
 - test with Ollama
 - optimize multipdf querying
