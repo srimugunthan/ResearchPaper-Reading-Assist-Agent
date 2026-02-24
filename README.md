@@ -227,6 +227,7 @@ pytest tests/ -q
 | Chunk size | `1000` | `cli.py --chunk-size` |
 | Chunk overlap | `200` | `cli.py --chunk-overlap` |
 
-## License
-
-This project is for personal/research use.
+## TODO
+- optimize RAG retrieval
+- test with Ollama
+- optimize multipdf querying
